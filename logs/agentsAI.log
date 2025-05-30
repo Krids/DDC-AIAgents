@@ -1,0 +1,100 @@
+2025-05-30 17:31:29 | WARNING | agentsAI.__main__ | main | Warning: default_api not found or not usable. Using MockDefaultAPI for web_search.
+2025-05-30 17:31:29 | INFO | agentsAI.__main__ | main | Starting main application execution.
+2025-05-30 17:31:29 | INFO | agentsAI.__main__ | main | Environment variables loaded from .env file
+2025-05-30 17:31:29 | INFO | agentsAI.core.agent_factory | agent_factory | Creating agent of type 'orchestrator' (Class: OrchestratorAgent) with ID 'default' and args: {}
+2025-05-30 17:31:29 | INFO | agentsAI.agents.base_agent | base_agent | Agent orchestrator_agent_001 (Orchestrator Agent) initialized.
+2025-05-30 17:31:29 | INFO | agentsAI.core.agent_factory | agent_factory | Creating agent of type 'content_research' (Class: ContentResearchAgent) with ID 'default' and args: {}
+2025-05-30 17:31:29 | INFO | agentsAI.agents.base_agent | base_agent | Agent research_agent_001 (Content Research Agent) initialized.
+2025-05-30 17:31:29 | INFO | agentsAI.agents.content_research_agent | content_research_agent | ApifyClientAsync initialized for Content Research Agent
+2025-05-30 17:31:29 | INFO | agentsAI.core.agent_factory | agent_factory | Creating agent of type 'writing' (Class: WritingAgent) with ID 'default' and args: {}
+2025-05-30 17:31:29 | INFO | agentsAI.agents.base_agent | base_agent | Agent writing_agent_001 (Writing Agent) initialized.
+2025-05-30 17:31:29 | INFO | agentsAI.agents.writing_agent | writing_agent | OpenAI client initialized for Writing Agent
+2025-05-30 17:31:29 | INFO | agentsAI.core.agent_factory | agent_factory | Creating agent of type 'seo' (Class: SEOAgent) with ID 'default' and args: {}
+2025-05-30 17:31:29 | INFO | agentsAI.agents.base_agent | base_agent | Agent seo_agent_001 (SEO Agent) initialized.
+2025-05-30 17:31:29 | INFO | agentsAI.agents.seo_agent | seo_agent | ApifyClientAsync initialized for SEO Agent
+2025-05-30 17:31:29 | INFO | agentsAI.core.agent_factory | agent_factory | Creating agent of type 'image' (Class: ImageAgent) with ID 'default' and args: {}
+2025-05-30 17:31:29 | INFO | agentsAI.agents.base_agent | base_agent | Agent image_agent_001 (Image Agent) initialized.
+2025-05-30 17:31:29 | INFO | agentsAI.agents.image_agent | image_agent | OpenAI client initialized for Image Agent
+2025-05-30 17:31:29 | INFO | agentsAI.agents.base_agent | base_agent | Message handler set for agent research_agent_001.
+2025-05-30 17:31:29 | INFO | agentsAI.agents.orchestrator | orchestrator | Agent Content Research Agent (ID: research_agent_001) registered with orchestrator.
+2025-05-30 17:31:29 | INFO | agentsAI.agents.base_agent | base_agent | Message handler set for agent writing_agent_001.
+2025-05-30 17:31:29 | INFO | agentsAI.agents.orchestrator | orchestrator | Agent Writing Agent (ID: writing_agent_001) registered with orchestrator.
+2025-05-30 17:31:29 | INFO | agentsAI.agents.base_agent | base_agent | Message handler set for agent seo_agent_001.
+2025-05-30 17:31:29 | INFO | agentsAI.agents.orchestrator | orchestrator | Agent SEO Agent (ID: seo_agent_001) registered with orchestrator.
+2025-05-30 17:31:29 | INFO | agentsAI.agents.base_agent | base_agent | Message handler set for agent image_agent_001.
+2025-05-30 17:31:29 | INFO | agentsAI.agents.orchestrator | orchestrator | Agent Image Agent (ID: image_agent_001) registered with orchestrator.
+2025-05-30 17:31:29 | INFO | agentsAI.__main__ | main | Starting blog post generation for topic: 'The Future of Multi-Agent AI Systems'
+2025-05-30 17:31:29 | INFO | agentsAI.agents.base_agent | base_agent | Message handler set for agent orchestrator_agent_001.
+2025-05-30 17:31:29 | INFO | agentsAI.__main__ | main | Master workflow task f31047ed-f78a-4232-ac6a-fec18b21286e created for orchestrator.
+2025-05-30 17:31:29 | INFO | agentsAI.__main__ | main | Triggering orchestrator to process its master task f31047ed-f78a-4232-ac6a-fec18b21286e...
+2025-05-30 17:31:29 | INFO | agentsAI.agents.orchestrator | orchestrator | Orchestrator (as agent) processing its own assigned task ID f31047ed-f78a-4232-ac6a-fec18b21286e: Create a blog post on topic: The Future of Multi-Agent AI Systems
+2025-05-30 17:31:29 | INFO | agentsAI.agents.base_agent | base_agent | Task f31047ed-f78a-4232-ac6a-fec18b21286e status updated to TaskStatus.IN_PROGRESS by agent orchestrator_agent_001
+2025-05-30 17:31:29 | INFO | agentsAI.agents.orchestrator | orchestrator | --- Orchestrator starting Blog Post Creation Workflow for topic: 'The Future of Multi-Agent AI Systems' ---
+2025-05-30 17:31:29 | INFO | agentsAI.agents.orchestrator | orchestrator | Orchestrator assigning task 'Research recent news on the topic: The Future of Multi-Agent AI Systems' (ID: d7211b37-458f-42ef-839e-a211aa0f456f) to agent Content Research Agent (ID: research_agent_001)
+2025-05-30 17:31:29 | INFO | agentsAI.agents.base_agent | base_agent | Agent research_agent_001 received task assignment: 'Research recent news on the topic: The Future of Multi-Agent AI Systems' (ID: d7211b37-458f-42ef-839e-a211aa0f456f)
+2025-05-30 17:31:29 | INFO | agentsAI.agents.content_research_agent | content_research_agent | Content Research Agent (research_agent_001) starting task: Research recent news on the topic: The Future of Multi-Agent AI Systems (using Apify research)
+2025-05-30 17:31:29 | INFO | agentsAI.agents.base_agent | base_agent | Task d7211b37-458f-42ef-839e-a211aa0f456f status updated to TaskStatus.IN_PROGRESS by agent research_agent_001
+2025-05-30 17:31:29 | INFO | agentsAI.agents.content_research_agent | content_research_agent | Content Research Agent performing Apify research for query: 'Comprehensive overview and recent developments in The Future of Multi-Agent AI Systems' (related to original topic: 'The Future of Multi-Agent AI Systems')
+2025-05-30 17:31:29 | INFO | agentsAI.agents.content_research_agent | content_research_agent | Content Research Agent: Calling Apify actor 'uNMHGOGRawDYkIXmg' for research query: 'Comprehensive overview and recent developments in The Future of Multi-Agent AI Systems'
+2025-05-30 17:31:41 | INFO | agentsAI.agents.content_research_agent | content_research_agent | Content Research Agent: Apify actor run NcU1O7MXr3azHZlse for query 'Comprehensive overview and recent developments in The Future of Multi-Agent AI Systems' finished. Fetching results from dataset UjL0rhMgG3Va9DbGN...
+2025-05-30 17:31:41 | INFO | agentsAI.agents.content_research_agent | content_research_agent | Content Research Agent: Extracted 3 research items from Apify for query 'Comprehensive overview and recent developments in The Future of Multi-Agent AI Systems'.
+2025-05-30 17:31:41 | INFO | agentsAI.agents.content_research_agent | content_research_agent | Saved Apify research actor response/details to data/apify_research_research_agent_001_d7211b37-458f-42ef-839e-a211aa0f456f_20250530_173141_436667.json
+2025-05-30 17:31:41 | INFO | agentsAI.agents.content_research_agent | content_research_agent | Processed 3 results from Apify for query 'Comprehensive overview and recent developments in The Future of Multi-Agent AI Systems'.
+2025-05-30 17:31:41 | INFO | agentsAI.agents.base_agent | base_agent | Task d7211b37-458f-42ef-839e-a211aa0f456f status updated to TaskStatus.COMPLETED by agent research_agent_001
+2025-05-30 17:31:41 | INFO | agentsAI.agents.content_research_agent | content_research_agent | Content Research Agent (research_agent_001) completed Apify research task: Research recent news on the topic: The Future of Multi-Agent AI Systems. Artifact: 839c1f5c-0539-4f71-82a7-84e46b185f9e
+2025-05-30 17:31:41 | INFO | agentsAI.agents.base_agent | base_agent | Task d7211b37-458f-42ef-839e-a211aa0f456f status updated to TaskStatus.COMPLETED by agent research_agent_001
+2025-05-30 17:31:41 | INFO | agentsAI.agents.orchestrator | orchestrator | Orchestrator received task status update for d7211b37-458f-42ef-839e-a211aa0f456f: completed from research_agent_001
+2025-05-30 17:31:41 | INFO | agentsAI.agents.orchestrator | orchestrator | Orchestrator: Task d7211b37-458f-42ef-839e-a211aa0f456f (assigned to Content Research Agent) processed. Final status: TaskStatus.COMPLETED
+2025-05-30 17:31:41 | INFO | agentsAI.agents.orchestrator | orchestrator | Orchestrator: Research completed. Artifact ID: 839c1f5c-0539-4f71-82a7-84e46b185f9e
+2025-05-30 17:31:41 | INFO | agentsAI.agents.orchestrator | orchestrator | Orchestrator assigning task 'Write a blog post: The Future of Multi-Agent AI Systems' (ID: 41f847e8-b69d-46c7-a470-1972c55a8743) to agent Writing Agent (ID: writing_agent_001)
+2025-05-30 17:31:41 | INFO | agentsAI.agents.base_agent | base_agent | Agent writing_agent_001 received task assignment: 'Write a blog post: The Future of Multi-Agent AI Systems' (ID: 41f847e8-b69d-46c7-a470-1972c55a8743)
+2025-05-30 17:31:41 | INFO | agentsAI.agents.writing_agent | writing_agent | Writing Agent (writing_agent_001) starting task: Write a blog post: The Future of Multi-Agent AI Systems
+2025-05-30 17:31:41 | INFO | agentsAI.agents.base_agent | base_agent | Task 41f847e8-b69d-46c7-a470-1972c55a8743 status updated to TaskStatus.IN_PROGRESS by agent writing_agent_001
+2025-05-30 17:31:41 | INFO | agentsAI.agents.writing_agent | writing_agent | Writing Agent generating blog draft for topic: 'The Future of Multi-Agent AI Systems' based on research artifact 839c1f5c-0539-4f71-82a7-84e46b185f9e
+2025-05-30 17:31:41 | INFO | agentsAI.agents.writing_agent | writing_agent | Writing Agent generating blog draft for topic: 'The Future of Multi-Agent AI Systems' based on research artifact
+2025-05-30 17:31:46 | INFO | agentsAI.agents.writing_agent | writing_agent | Writing Agent: Successfully generated blog draft for 'The Future of Multi-Agent AI Systems' using OpenAI and prompt builder.
+2025-05-30 17:31:46 | INFO | agentsAI.agents.writing_agent | writing_agent | Saved OpenAI writing response to data/openai_writing_writing_agent_001_41f847e8-b69d-46c7-a470-1972c55a8743_20250530_173146_513237.json
+2025-05-30 17:31:46 | INFO | agentsAI.agents.base_agent | base_agent | Task 41f847e8-b69d-46c7-a470-1972c55a8743 status updated to TaskStatus.COMPLETED by agent writing_agent_001
+2025-05-30 17:31:46 | INFO | agentsAI.agents.writing_agent | writing_agent | Writing Agent (writing_agent_001) completed task: Write a blog post: The Future of Multi-Agent AI Systems. Artifact: d55a7aa8-f1cb-4ed6-9967-0bf39e0bb8e0
+2025-05-30 17:31:46 | INFO | agentsAI.agents.base_agent | base_agent | Task 41f847e8-b69d-46c7-a470-1972c55a8743 status updated to TaskStatus.COMPLETED by agent writing_agent_001
+2025-05-30 17:31:46 | INFO | agentsAI.agents.orchestrator | orchestrator | Orchestrator received task status update for 41f847e8-b69d-46c7-a470-1972c55a8743: completed from writing_agent_001
+2025-05-30 17:31:46 | INFO | agentsAI.agents.orchestrator | orchestrator | Orchestrator: Task 41f847e8-b69d-46c7-a470-1972c55a8743 (assigned to Writing Agent) processed. Final status: TaskStatus.COMPLETED
+2025-05-30 17:31:46 | INFO | agentsAI.agents.orchestrator | orchestrator | Orchestrator: Drafting completed. Artifact: d55a7aa8-f1cb-4ed6-9967-0bf39e0bb8e0
+2025-05-30 17:31:46 | INFO | agentsAI.agents.orchestrator | orchestrator | Orchestrator assigning task 'Optimize SEO: The Future of Multi-Agent AI Systems' (ID: 9b6cc0ff-9653-4748-b676-769d97f175f9) to agent SEO Agent (ID: seo_agent_001)
+2025-05-30 17:31:46 | INFO | agentsAI.agents.base_agent | base_agent | Agent seo_agent_001 received task assignment: 'Optimize SEO: The Future of Multi-Agent AI Systems' (ID: 9b6cc0ff-9653-4748-b676-769d97f175f9)
+2025-05-30 17:31:46 | INFO | agentsAI.agents.seo_agent | seo_agent | SEO Agent (seo_agent_001) starting task: Optimize SEO: The Future of Multi-Agent AI Systems
+2025-05-30 17:31:46 | INFO | agentsAI.agents.base_agent | base_agent | Task 9b6cc0ff-9653-4748-b676-769d97f175f9 status updated to TaskStatus.IN_PROGRESS by agent seo_agent_001
+2025-05-30 17:31:46 | INFO | agentsAI.agents.seo_agent | seo_agent | SEO Agent analyzing draft for topic: 'The Future of Multi-Agent AI Systems' (Artifact ID: d55a7aa8-f1cb-4ed6-9967-0bf39e0bb8e0)
+2025-05-30 17:31:46 | INFO | agentsAI.agents.seo_agent | seo_agent | SEO Agent: Calling Apify actor 'zrikMXxBEbEj3a6Pc' for query: 'The Future of Multi-Agent AI Systems'
+2025-05-30 17:33:14 | INFO | agentsAI.agents.seo_agent | seo_agent | SEO Agent: Apify actor run yEJz3A4aHo5zi6B8S for query 'The Future of Multi-Agent AI Systems' finished. Fetching results from dataset A7Yd9JRdGpd5vTP7V...
+2025-05-30 17:33:15 | WARNING | agentsAI.agents.seo_agent | seo_agent | No keywords extracted from Apify for query 'The Future of Multi-Agent AI Systems'. Using fallback.
+2025-05-30 17:33:15 | INFO | agentsAI.agents.seo_agent | seo_agent | SEO Agent: Extracted 1 unique keywords from Apify for query 'The Future of Multi-Agent AI Systems': ['The Future of Multi-Agent AI Systems']
+2025-05-30 17:33:15 | INFO | agentsAI.agents.seo_agent | seo_agent | Saved Apify SEO actor response/details to data/apify_seo_seo_agent_001_9b6cc0ff-9653-4748-b676-769d97f175f9_20250530_173315_367610.json
+2025-05-30 17:33:15 | WARNING | agentsAI.agents.seo_agent | seo_agent | SEO Agent: Not enough keywords from Apify for topic 'The Future of Multi-Agent AI Systems'. Using robust fallback keywords.
+2025-05-30 17:33:15 | INFO | agentsAI.agents.base_agent | base_agent | Task 9b6cc0ff-9653-4748-b676-769d97f175f9 status updated to TaskStatus.COMPLETED by agent seo_agent_001
+2025-05-30 17:33:15 | INFO | agentsAI.agents.seo_agent | seo_agent | SEO Agent (seo_agent_001) completed SEO task: Optimize SEO: The Future of Multi-Agent AI Systems. Artifact: fc2af2ab-3a66-48ec-804b-f7122a1877fc
+2025-05-30 17:33:15 | INFO | agentsAI.agents.base_agent | base_agent | Task 9b6cc0ff-9653-4748-b676-769d97f175f9 status updated to TaskStatus.COMPLETED by agent seo_agent_001
+2025-05-30 17:33:15 | INFO | agentsAI.agents.orchestrator | orchestrator | Orchestrator received task status update for 9b6cc0ff-9653-4748-b676-769d97f175f9: completed from seo_agent_001
+2025-05-30 17:33:15 | INFO | agentsAI.agents.orchestrator | orchestrator | Orchestrator: Task 9b6cc0ff-9653-4748-b676-769d97f175f9 (assigned to SEO Agent) processed. Final status: TaskStatus.COMPLETED
+2025-05-30 17:33:15 | INFO | agentsAI.agents.orchestrator | orchestrator | Orchestrator: SEO optimization completed. Artifact: fc2af2ab-3a66-48ec-804b-f7122a1877fc
+2025-05-30 17:33:15 | INFO | agentsAI.agents.orchestrator | orchestrator | Orchestrator assigning task 'Generate images for: The Future of Multi-Agent AI Systems' (ID: 399eeea0-8544-4e50-a310-3a8c1a484a38) to agent Image Agent (ID: image_agent_001)
+2025-05-30 17:33:15 | INFO | agentsAI.agents.base_agent | base_agent | Agent image_agent_001 received task assignment: 'Generate images for: The Future of Multi-Agent AI Systems' (ID: 399eeea0-8544-4e50-a310-3a8c1a484a38)
+2025-05-30 17:33:15 | INFO | agentsAI.agents.image_agent | image_agent | Image Agent (image_agent_001) starting task: Generate images for: The Future of Multi-Agent AI Systems
+2025-05-30 17:33:15 | INFO | agentsAI.agents.base_agent | base_agent | Task 399eeea0-8544-4e50-a310-3a8c1a484a38 status updated to TaskStatus.IN_PROGRESS by agent image_agent_001
+2025-05-30 17:33:15 | ERROR | agentsAI.agents.base_agent | base_agent | Error processing task assignment for image_agent_001 (message ID 7ce9de5d-4182-4e58-8d8e-ac09bb653848): 'ImageAgent' object has no attribute '_extract_topic_from_description'
+Traceback (most recent call last):
+  File "/Users/Felipe/Personal/agentsAI/agents/base_agent.py", line 173, in handle_incoming_message
+    await self.process_task(task)
+  File "/Users/Felipe/Personal/agentsAI/agents/image_agent.py", line 189, in process_task
+    # The variable 'topic_desc_part' now holds the best extracted topic string.
+AttributeError: 'ImageAgent' object has no attribute '_extract_topic_from_description'
+2025-05-30 17:38:15 | ERROR | agentsAI.agents.orchestrator | orchestrator | Orchestrator: Timeout waiting for task 399eeea0-8544-4e50-a310-3a8c1a484a38 (assigned to Image Agent) to complete.
+2025-05-30 17:38:15 | WARNING | agentsAI.agents.orchestrator | orchestrator | Orchestrator: Image task failed. Status: TaskStatus.FAILED. Error: Task timed out in orchestrator.. Using content without new images.
+2025-05-30 17:38:15 | INFO | agentsAI.agents.orchestrator | orchestrator | --- Orchestrator: Blog Post Creation Workflow for topic: 'The Future of Multi-Agent AI Systems' COMPLETED ---
+2025-05-30 17:38:15 | INFO | agentsAI.agents.orchestrator | orchestrator | Final Blog Post Artifact ID: fc2af2ab-3a66-48ec-804b-f7122a1877fc
+2025-05-30 17:38:15 | INFO | agentsAI.agents.base_agent | base_agent | Task f31047ed-f78a-4232-ac6a-fec18b21286e status updated to TaskStatus.COMPLETED by agent orchestrator_agent_001
+2025-05-30 17:38:15 | INFO | agentsAI.agents.orchestrator | orchestrator | Orchestrator sending completion status for its own task f31047ed-f78a-4232-ac6a-fec18b21286e to initiator system_initiator_b73c5a19-7a2d-4a7a-b7a2-a4d3006d0a86.
+2025-05-30 17:38:15 | ERROR | agentsAI.agents.orchestrator | orchestrator | Receiver agent system_initiator_b73c5a19-7a2d-4a7a-b7a2-a4d3006d0a86 not found for message ID 2fece5b1-68f1-4853-9c93-bd08e92e25d6. Known agents: ['research_agent_001', 'writing_agent_001', 'seo_agent_001', 'image_agent_001']
+2025-05-30 17:38:15 | INFO | agentsAI.__main__ | main | Blog post workflow COMPLETED successfully! Final artifact ID: fc2af2ab-3a66-48ec-804b-f7122a1877fc, Content Type: text/markdown
+2025-05-30 17:38:15 | INFO | agentsAI.__main__ | main | Blog post saved to: outputs/the_future_of_multi_agent_ai_systems_20250530_173815.md
+2025-05-30 17:38:15 | INFO | agentsAI.__main__ | main | Main application execution finished successfully.

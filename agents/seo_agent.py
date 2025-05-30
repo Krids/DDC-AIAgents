@@ -5,88 +5,116 @@ import logging
 import re
 from apify_client import ApifyClientAsync
 from typing import List, Optional
+from datetime import datetime
+from utils.json_utils import convert_datetime_to_iso_string
+from apify_client._errors import ApifyApiError
 
 from agents.base_agent import BaseAgent, Task, TaskStatus, Artifact
 # from protocols.a2a_schemas import AgentMessage # Unused
 
 logger = logging.getLogger(f"agentsAI.{__name__}")
 
+ACTOR_ID = "zrikMXxBEbEj3a6Pc"  # User provided ID for keyword research
+
 class SEOAgent(BaseAgent):
+    AGENT_DATA_SUBFOLDER = "seo_apify"
+
     def __init__(self, agent_id: str = "seo_agent_001", name: str = "SEO Agent",
-                 description: str = "Analyzes content and provides SEO recommendations using Apify for keywords.", **kwargs):
+                 description: str = "Optimizes content for SEO using keywords from Apify.",
+                 data_dir_override: Optional[str] = None, **kwargs):
         super().__init__(agent_id=agent_id, name=name, description=description, **kwargs)
+        self.data_dir_override = data_dir_override
         self.register_capability(
             skill_name="optimize_seo",
-            description="Optimizes a blog post draft for SEO, using Apify for keyword research.",
+            description="Optimizes a blog post draft for SEO by adding relevant keywords.",
             input_schema={"type": "object", "properties": {"draft_artifact_id": {"type": "string"}}},
-            output_schema={"type": "object", "properties": {"seo_optimized_artifact_id": {"type": "string"}}}
+            output_schema={"type": "object", "properties": {"optimized_artifact_id": {"type": "string"}}}
         )
         self.apify_client: Optional[ApifyClientAsync] = None
-        try:
-            apify_token = os.getenv("APIFY_API_TOKEN")
-            if not apify_token:
-                logger.warning(f"{self.card.name}: APIFY_API_TOKEN not found in environment. SEO Agent keyword research will use fallback.")
-                # self.apify_client remains None
-            else:
-                self.apify_client = ApifyClientAsync(apify_token)
-                logger.info(f"ApifyClientAsync initialized for {self.card.name}")
-        except Exception as e:
-            logger.error(f"Error initializing ApifyClientAsync for {self.card.name}: {e}. Keyword research will use fallback.", exc_info=True)
-            # self.apify_client remains None
+        self.apify_api_token = os.getenv("APIFY_API_TOKEN")
+        if self.apify_api_token:
+            try:
+                self.apify_client = ApifyClientAsync(self.apify_api_token)
+                logger.info(f"{self.card.name}: ApifyClientAsync initialized.")
+            except Exception as e:
+                logger.error(f"{self.card.name}: Error initializing ApifyClientAsync: {e}. SEO Agent will use fallback keywords.", exc_info=True)
+                self.apify_client = None # Ensure it's None if init fails
+        else:
+            logger.warning(f"{self.card.name}: APIFY_API_TOKEN not found in environment. SEO Agent keyword research will use fallback.")
 
-    async def get_keywords_from_apify(self, text_query: str, max_keywords: int = 10) -> List[str]:
+    async def get_keywords_from_apify(self, topic: str, task_id_for_log: Optional[str] = None, max_keywords: int = 10) -> List[str]:
         if not self.apify_client:
-            logger.warning(f"{self.card.name}: Apify client not available. Returning fallback keywords for query '{text_query}'.")
-            return [text_query, f"{text_query} trends", f"best {text_query} practices"]
+            logger.warning(f"{self.card.name}: Apify client not available. Returning fallback keywords for topic '{topic}'. Task ID: {task_id_for_log}")
+            return [topic, f"{topic} insights", f"learn {topic}"]
 
-        ACTOR_ID = "kocourek/keyword-research-tool" # User needs to ensure this is correct
-        logger.info(f"{self.card.name}: Calling Apify actor '{ACTOR_ID}' for query: '{text_query}'")
+        logger.info(f"{self.card.name}: Fetching keywords from Apify for topic '{topic}'. Actor ID: {ACTOR_ID}. Task ID: {task_id_for_log}")
+        run_input = {"keyword": topic, "max_results": max_keywords, "languageCode": "en"}
+        
+        raw_response_data = None
+        actor_run_details = None
+        dataset_items = []
 
         try:
-            actor_input = {
-                "queries": [text_query],
-                "countryCode": "US", # Example, could be configurable
-                "maxResults": max_keywords,
-            }
-            logger.debug(f"{self.card.name}: Apify actor input: {actor_input}")
-            actor_client = await self.apify_client.actor(ACTOR_ID)
-            run = await actor_client.call(run_input=actor_input)
+            actor_client = self.apify_client.actor(ACTOR_ID) # Removed await
+            run = await actor_client.call(run_input=run_input, memory_mbytes=256, timeout_secs=120)
+            actor_run_details = run # Store for logging
+
+            if not run or not run.get("defaultDatasetId"):
+                logger.error(f"{self.card.name}: Apify actor run {run.get('id') if run else 'N/A'} for query '{topic}' did not return a valid defaultDatasetId. Run details: {run}")
+                return [topic, f"{topic} error fallback", f"Apify issue {topic}"]
+
+            logger.info(f"{self.card.name}: Apify actor run {run['id']} for '{topic}' completed with status {run.get('status')}. Fetching dataset {run['defaultDatasetId']}.")
+            dataset_client = self.apify_client.dataset(run["defaultDatasetId"]) # Removed await
             
             keywords = []
-            if not run or not run.get("datasetId"):
-                logger.error(f"Apify actor call for '{ACTOR_ID}' did not return a valid run or datasetId. Run details: {run}")
-                return [text_query, f"{text_query} error fallback", f"Apify issue {text_query}"]
-
-            logger.info(f"{self.card.name}: Apify actor run {run['id']} for query '{text_query}' finished. Fetching results from dataset {run['datasetId']}...")
-            dataset_client = await self.apify_client.dataset(run["datasetId"])
-            async for item in dataset_client.iterate_items():
-                if isinstance(item, dict):
-                    keyword_found = None
-                    # More robust extraction based on observed Apify outputs for keyword actors
-                    for key_field in ["keyword", "search_term", "value", "text", "query"]:
-                        if key_field in item and isinstance(item[key_field], str) and item[key_field].strip():
-                            keyword_found = item[key_field].strip()
-                            break
-                    
-                    if keyword_found:
-                        keywords.append(keyword_found)
-                        logger.debug(f"Extracted keyword from Apify item: {keyword_found}")
-
+            # Store items for saving later
+            async for item in dataset_client.iterate_items(): 
+                dataset_items.append(item)
+                # Extract keyword - common patterns: "keyword", "search_term", "value"
+                keyword_val = item.get("keyword") or item.get("search_term") or item.get("value")
+                if keyword_val and isinstance(keyword_val, str):
+                    keywords.append(keyword_val.strip())
                 if len(keywords) >= max_keywords:
-                    logger.debug(f"Reached max_keywords ({max_keywords}). Stopping Apify item iteration.")
                     break
             
+            raw_response_data = {"actor_run": actor_run_details, "dataset_items": dataset_items}
+
             if not keywords:
-                 logger.warning(f"No keywords extracted from Apify for query '{text_query}'. Using fallback.")
-                 keywords.append(text_query) # At least use the original query
+                logger.warning(f"{self.card.name}: No keywords extracted from Apify dataset {run['defaultDatasetId']} for topic '{topic}'. Dataset items: {dataset_items[:3]}... Task ID: {task_id_for_log}")
+                return [topic] # Fallback with just the topic if no keywords found
             
-            unique_keywords = list(dict.fromkeys(keywords)) # Preserve order and get unique
-            logger.info(f"{self.card.name}: Extracted {len(unique_keywords)} unique keywords from Apify for query '{text_query}': {unique_keywords[:max_keywords]}")
-            return unique_keywords[:max_keywords]
-            
+            logger.info(f"{self.card.name}: Extracted {len(keywords)} keywords from Apify for topic '{topic}': {keywords[:5]}... Task ID: {task_id_for_log}")
+            return keywords[:max_keywords]
+
+        except ApifyApiError as e:
+            logger.error(f"{self.card.name}: Apify API error while fetching keywords for '{topic}': {e}. Task ID: {task_id_for_log}", exc_info=True)
+            raw_response_data = {"apify_api_error": str(e), "actor_run_details": actor_run_details, "run_input": run_input, "traceback": logging.Formatter().formatException(logging.sys.exc_info())}
+            return [topic, f"{topic} insights", f"learn {topic}"] # Fallback
         except Exception as e:
-            logger.error(f"{self.card.name}: Error calling Apify actor '{ACTOR_ID}' or processing results for query '{text_query}': {e}", exc_info=True)
-            return [text_query, f"{text_query} insights", f"learn {text_query}"] # Fallback
+            logger.error(f"{self.card.name}: Error calling Apify actor '{ACTOR_ID}' or processing results for query '{topic}': {e}. Task ID: {task_id_for_log}", exc_info=True)
+            # Ensure raw_response_data is a dict for consistent saving
+            if not isinstance(raw_response_data, dict):
+                 raw_response_data = {}
+            raw_response_data.update({"exception": str(e), "actor_run_details": actor_run_details, "run_input": run_input, "traceback": logging.Formatter().formatException(logging.sys.exc_info())})
+            return [topic, f"{topic} key terms", f"research {topic}"] # Fallback
+        finally:
+            if raw_response_data:
+                try:
+                    base_save_path = self.data_dir_override
+                    if base_save_path is None:
+                        base_save_path = os.path.join("data", self.AGENT_DATA_SUBFOLDER)
+                    
+                    os.makedirs(base_save_path, exist_ok=True)
+                    ts = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                    log_id = task_id_for_log if task_id_for_log else "unknown_task"
+                    filename = os.path.join(base_save_path, f"apify_seo_{self.agent_id}_{log_id}_{ts}.json")
+                    
+                    serializable_data = convert_datetime_to_iso_string(raw_response_data)
+                    with open(filename, "w", encoding="utf-8") as f:
+                        json.dump(serializable_data, f, indent=4, ensure_ascii=False)
+                    logger.info(f"Saved Apify SEO raw response/error to {filename}")
+                except Exception as log_e:
+                    logger.error(f"Failed to save Apify SEO raw response to file: {log_e}", exc_info=True)
 
     async def process_task(self, task: Task):
         logger.info(f"{self.card.name} ({self.agent_id}) starting task: {task.description}")
@@ -139,7 +167,7 @@ class SEOAgent(BaseAgent):
 
         logger.info(f"{self.card.name} analyzing draft for topic: '{topic}' (Artifact ID: {draft_artifact.artifact_id})")
         
-        suggested_keywords = await self.get_keywords_from_apify(topic, max_keywords=10)
+        suggested_keywords = await self.get_keywords_from_apify(topic, task_id_for_log=task.task_id, max_keywords=10)
         
         if not suggested_keywords or len(suggested_keywords) < 3:
             logger.warning(f"{self.card.name}: Not enough keywords from Apify for topic '{topic}'. Using robust fallback keywords.")

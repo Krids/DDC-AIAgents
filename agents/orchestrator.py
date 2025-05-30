@@ -14,6 +14,7 @@ class OrchestratorAgent(BaseAgent):
         super().__init__(agent_id=agent_id, name=name, description=description, **kwargs)
         self.registered_agents: Dict[str, BaseAgent] = {}
         self.task_callbacks: Dict[str, asyncio.Future] = {}
+        self.active_tasks: Dict[str, Task] = {} # To store tasks being managed
         # No need to log init here, base class does it.
 
         self.register_capability(
@@ -62,40 +63,47 @@ class OrchestratorAgent(BaseAgent):
         await super().handle_incoming_message(message)
 
         if message.message_type == "task_status_update":
-            task_data = message.payload
-            if isinstance(task_data, dict):
-                try:
-                    updated_task = Task(**task_data)
-                    logger.info(f"Orchestrator received task status update for {updated_task.task_id}: {updated_task.status} from {message.sender_agent_id}")
-                    if updated_task.task_id in self.task_callbacks:
-                        future = self.task_callbacks[updated_task.task_id]
-                        if not future.done():
-                            if updated_task.status == TaskStatus.COMPLETED:
-                                future.set_result(updated_task)
-                            elif updated_task.status in [TaskStatus.FAILED, TaskStatus.CANCELLED]:
-                                future.set_exception(RuntimeError(f"Task {updated_task.task_id} (delegated to {message.sender_agent_id}) reported status: {updated_task.status}. Full task: {updated_task}"))
-                        # Clean up callback if task is terminal
-                        if updated_task.status in [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED]:
-                            del self.task_callbacks[updated_task.task_id]
-                            logger.debug(f"Removed callback for terminal task {updated_task.task_id}")
-                    else:
-                        logger.warning(f"Received status update for untracked/already completed task {updated_task.task_id} from {message.sender_agent_id}")
-                except Exception as e:
-                    logger.error(f"Error processing task_status_update payload in orchestrator: {e}. Payload: {task_data}", exc_info=True)
-            else:
-                logger.error(f"Orchestrator received non-dict task_status_update payload: {task_data} from {message.sender_agent_id}")
+            task_data_payload = message.payload # This is a dict
+            if isinstance(task_data_payload, dict):
+                task_id = task_data_payload.get("task_id")
+                status_str = task_data_payload.get("status")
+                
+                if not task_id or not status_str:
+                    logger.error(f"Orchestrator received incomplete task_status_update payload (missing task_id or status): {task_data_payload} from {message.sender_agent_id}")
+                    return
 
-    async def assign_task_and_wait(self, agent: BaseAgent, task_description: str, input_artifacts: Optional[List[Artifact]] = None) -> Task:
-        task = self.create_task(
+                try:
+                    # No full Task deserialization here
+                    logger.info(f"Orchestrator received task status update for {task_id}: {status_str} from {message.sender_agent_id}")
+                    
+                    if task_id in self.task_callbacks:
+                        future = self.task_callbacks[task_id]
+                        if not future.done():
+                            # Pass the raw payload dictionary to the future
+                            future.set_result(task_data_payload) 
+                            # Clean up callback will be handled by assign_task_and_wait after future is processed
+                        # else: # Future already done (e.g. timeout)
+                            # logger.debug(f"Future for task {task_id} was already done when status update arrived.")
+                    else:
+                        logger.warning(f"Received status update for untracked or already completed/timed-out task {task_id} from {message.sender_agent_id}")
+                except Exception as e: # Should be minimal risk here now
+                    logger.error(f"Error processing task_status_update in orchestrator (after getting payload): {e}. Payload: {task_data_payload}", exc_info=True)
+            else:
+                logger.error(f"Orchestrator received non-dict task_status_update payload: {task_data_payload} from {message.sender_agent_id}")
+
+    async def assign_task_and_wait(self, agent: BaseAgent, task_description: str, input_artifacts: Optional[List[Artifact]] = None, timeout: float = 300.0) -> Task:
+        task_to_assign = self.create_task(
             description=task_description,
             initiator_agent_id=self.agent_id,
             assigned_to_agent_id=agent.agent_id,
             input_artifacts=input_artifacts or []
         )
-        logger.info(f"Orchestrator assigning task '{task.description}' (ID: {task.task_id}) to agent {agent.card.name} (ID: {agent.agent_id})")
+        self.active_tasks[task_to_assign.task_id] = task_to_assign # Store the full task object
+
+        logger.info(f"Orchestrator assigning task '{task_to_assign.description}' (ID: {task_to_assign.task_id}) to agent {agent.card.name} (ID: {agent.agent_id})")
 
         future = asyncio.Future()
-        self.task_callbacks[task.task_id] = future
+        self.task_callbacks[task_to_assign.task_id] = future
 
         assignment_message = AgentMessage(
             message_id=str(uuid.uuid4()),
@@ -103,38 +111,95 @@ class OrchestratorAgent(BaseAgent):
             receiver_agent_id=agent.agent_id,
             timestamp=self._get_timestamp(),
             message_type="task_assignment",
-            payload=task.model_dump()
+            payload=task_to_assign.model_dump()
         )
         await self.route_message(assignment_message)
 
         try:
-            completed_task = await asyncio.wait_for(future, timeout=300.0) # Adding a timeout (e.g., 5 minutes)
-            logger.info(f"Orchestrator: Task {completed_task.task_id} (assigned to {agent.card.name}) completed with status {completed_task.status}")
-            return completed_task
+            task_update_payload: dict = await asyncio.wait_for(future, timeout=timeout)
+            
+            original_task = self.active_tasks.get(task_to_assign.task_id)
+            if not original_task:
+                logger.error(f"CRITICAL: Original task {task_to_assign.task_id} not found in active_tasks after callback for agent {agent.card.name}. Payload: {task_update_payload}")
+                return Task(
+                    task_id=task_to_assign.task_id, 
+                    description=task_to_assign.description,
+                    initiator_agent_id=self.agent_id,
+                    assigned_to_agent_id=agent.agent_id,
+                    status=TaskStatus(task_update_payload.get("status", TaskStatus.UNKNOWN.value)),
+                    output_artifacts=[Artifact(**art) for art in task_update_payload.get("output_artifacts", [])],
+                    error_message=task_update_payload.get("error_message"),
+                    created_at=task_to_assign.created_at,
+                    updated_at=self._get_timestamp()
+                )
+
+            new_status_str = task_update_payload.get("status")
+            if new_status_str:
+                original_task.status = TaskStatus(new_status_str)
+            
+            output_artifacts_data = task_update_payload.get("output_artifacts")
+            if output_artifacts_data is not None:
+                 original_task.output_artifacts = [Artifact(**art_data) for art_data in output_artifacts_data]
+            
+            error_msg = task_update_payload.get("error_message")
+            if error_msg:
+                original_task.error_message = error_msg
+            
+            original_task.updated_at = self._get_timestamp()
+
+            logger.info(f"Orchestrator: Task {original_task.task_id} (assigned to {agent.card.name}) processed. Final status: {original_task.status}")
+            
+            if task_to_assign.task_id in self.task_callbacks:
+                del self.task_callbacks[task_to_assign.task_id]
+            if task_to_assign.task_id in self.active_tasks:
+                del self.active_tasks[task_to_assign.task_id]
+
+            return original_task
+
         except asyncio.TimeoutError:
-            logger.error(f"Orchestrator: Timeout waiting for task {task.task_id} (assigned to {agent.card.name}) to complete.")
-            # Clean up callback
-            if task.task_id in self.task_callbacks:
-                del self.task_callbacks[task.task_id]
-            task.status = TaskStatus.FAILED # Mark task as failed due to timeout
-            task.updated_at = self._get_timestamp()
-            # We might want to send a cancellation to the agent if that's supported
-            return task # Return the task marked as failed
+            logger.error(f"Orchestrator: Timeout waiting for task {task_to_assign.task_id} (assigned to {agent.card.name}) to complete.")
+            if task_to_assign.task_id in self.task_callbacks:
+                del self.task_callbacks[task_to_assign.task_id]
+            
+            original_task = self.active_tasks.pop(task_to_assign.task_id, None)
+            if original_task:
+                original_task.status = TaskStatus.FAILED 
+                original_task.error_message = "Task timed out in orchestrator."
+                original_task.updated_at = self._get_timestamp()
+                return original_task
+            else:
+                 return Task(
+                    task_id=task_to_assign.task_id, description=task_to_assign.description, 
+                    initiator_agent_id=self.agent_id, assigned_to_agent_id=agent.agent_id,
+                    status=TaskStatus.FAILED, error_message="Task timed out and original task data lost.",
+                    created_at=task_to_assign.created_at, updated_at=self._get_timestamp()
+                 )
         except Exception as e:
-            logger.error(f"Orchestrator: Error while waiting for task {task.task_id} (assigned to {agent.card.name}): {e}", exc_info=True)
-            if task.task_id in self.task_callbacks:
-                del self.task_callbacks[task.task_id]
-            task.status = TaskStatus.FAILED
-            task.updated_at = self._get_timestamp()
-            return task
+            logger.error(f"Orchestrator: Error while waiting for task {task_to_assign.task_id} (assigned to {agent.card.name}): {e}", exc_info=True)
+            if task_to_assign.task_id in self.task_callbacks:
+                del self.task_callbacks[task_to_assign.task_id]
+            
+            original_task = self.active_tasks.pop(task_to_assign.task_id, None)
+            if original_task:
+                original_task.status = TaskStatus.FAILED
+                original_task.error_message = str(e)
+                original_task.updated_at = self._get_timestamp()
+                return original_task
+            else:
+                return Task(
+                    task_id=task_to_assign.task_id, description=task_to_assign.description,
+                    initiator_agent_id=self.agent_id, assigned_to_agent_id=agent.agent_id,
+                    status=TaskStatus.FAILED, error_message=f"Task failed with error and original task data lost: {e}",
+                    created_at=task_to_assign.created_at, updated_at=self._get_timestamp()
+                )
 
     async def execute_blog_post_workflow(self, topic: str) -> Optional[Artifact]:
         logger.info(f"--- Orchestrator starting Blog Post Creation Workflow for topic: '{topic}' ---")
         final_blog_post_artifact = None
         try:
-            research_agents = self.discover_agents_with_capability("research_topic_web")
+            research_agents = self.discover_agents_with_capability("research_topic_apify")
             if not research_agents:
-                logger.error("Orchestrator: No ContentResearchAgent with 'research_topic_web' capability found.")
+                logger.error("Orchestrator: No ContentResearchAgent with 'research_topic_apify' capability found.")
                 return None
             research_agent = research_agents[0]
 
@@ -152,7 +217,7 @@ class OrchestratorAgent(BaseAgent):
                 input_artifacts=[initial_research_artifact]
             )
             if research_task_result.status != TaskStatus.COMPLETED or not research_task_result.output_artifacts:
-                logger.error(f"Orchestrator: Research task {research_task_result.task_id} failed or produced no artifacts. Status: {research_task_result.status}")
+                logger.error(f"Orchestrator: Research task {research_task_result.task_id} failed or produced no artifacts. Status: {research_task_result.status}. Error: {research_task_result.error_message}")
                 return None
             researched_content_artifact = research_task_result.output_artifacts[0]
             logger.info(f"Orchestrator: Research completed. Artifact ID: {researched_content_artifact.artifact_id}")
@@ -164,7 +229,7 @@ class OrchestratorAgent(BaseAgent):
             writing_agent = writing_agents[0]
             drafting_task_result = await self.assign_task_and_wait(writing_agent, f"Write a blog post: {topic}", [researched_content_artifact])
             if drafting_task_result.status != TaskStatus.COMPLETED or not drafting_task_result.output_artifacts:
-                logger.error(f"Orchestrator: Drafting task failed. Status: {drafting_task_result.status}")
+                logger.error(f"Orchestrator: Drafting task failed. Status: {drafting_task_result.status}. Error: {drafting_task_result.error_message}")
                 return None
             draft_artifact = drafting_task_result.output_artifacts[0]
             logger.info(f"Orchestrator: Drafting completed. Artifact: {draft_artifact.artifact_id}")
@@ -177,7 +242,7 @@ class OrchestratorAgent(BaseAgent):
                 seo_agent = seo_agents[0]
                 seo_task_result = await self.assign_task_and_wait(seo_agent, f"Optimize SEO: {topic}", [draft_artifact])
                 if seo_task_result.status != TaskStatus.COMPLETED or not seo_task_result.output_artifacts:
-                    logger.warning(f"Orchestrator: SEO task failed. Status: {seo_task_result.status}. Using unoptimized draft.")
+                    logger.warning(f"Orchestrator: SEO task failed. Status: {seo_task_result.status}. Error: {seo_task_result.error_message}. Using unoptimized draft.")
                     seo_optimized_artifact = draft_artifact
                 else:
                     seo_optimized_artifact = seo_task_result.output_artifacts[0]
@@ -191,7 +256,7 @@ class OrchestratorAgent(BaseAgent):
                 image_agent = image_agents[0]
                 image_task_result = await self.assign_task_and_wait(image_agent, f"Generate images for: {topic}", [seo_optimized_artifact])
                 if image_task_result.status != TaskStatus.COMPLETED or not image_task_result.output_artifacts:
-                    logger.warning(f"Orchestrator: Image task failed. Status: {image_task_result.status}. Using content without new images.")
+                    logger.warning(f"Orchestrator: Image task failed. Status: {image_task_result.status}. Error: {image_task_result.error_message}. Using content without new images.")
                     final_blog_post_artifact = seo_optimized_artifact
                 else:
                     final_blog_post_artifact = image_task_result.output_artifacts[0]
@@ -230,7 +295,7 @@ class OrchestratorAgent(BaseAgent):
         # If orchestrator is assigned a task by main.py (system_initiator_id), we want to send an update.
         if task.initiator_agent_id and task.initiator_agent_id != self.agent_id and self.message_handler:
              logger.info(f"Orchestrator sending completion status for its own task {task.task_id} to initiator {task.initiator_agent_id}.")
-             self.send_message(
+             await self.send_message(
                  receiver_agent_id=task.initiator_agent_id,
                  message_type="task_status_update",
                  payload=task.model_dump()

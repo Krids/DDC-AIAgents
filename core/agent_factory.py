@@ -2,7 +2,7 @@
 Agent Factory to create and register various agent types.
 """
 
-from typing import Optional
+from typing import Optional, Dict, Type, Any
 
 from agents import (
     OrchestratorAgent,
@@ -17,61 +17,43 @@ from agents import (
 import logging
 logger = logging.getLogger(f"agentsAI.{__name__}")
 
-class AgentFactory:
-    _registry = {
-        "orchestrator": OrchestratorAgent,
-        "content_research": ContentResearchAgent,
-        "writing": WritingAgent,
-        "seo": SEOAgent,
-        "image": ImageAgent,
-    }
+# Global agent registry
+AGENT_REGISTRY: Dict[str, Type[BaseAgent]] = {}
 
-    @classmethod
-    def register_agent_type(cls, agent_type_key: str, agent_class: type[BaseAgent]):
-        """Allows dynamic registration of agent types."""
-        if not issubclass(agent_class, BaseAgent):
-            raise TypeError(f"Agent class {agent_class.__name__} must be a subclass of BaseAgent.")
-        if agent_type_key in cls._registry:
-            logger.warning(f"Agent type '{agent_type_key}' is already registered. Overwriting with {agent_class.__name__}.")
-        cls._registry[agent_type_key] = agent_class
-        logger.info(f"Agent type '{agent_type_key}' registered to class {agent_class.__name__}.")
+def register_agent_type(name: str, agent_class: Type[BaseAgent]):
+    logger.info(f"Registering agent type: {name}")
+    AGENT_REGISTRY[name] = agent_class
 
-    @classmethod
-    def create_agent(cls, agent_type_key: str, agent_id: Optional[str] = None, **kwargs) -> BaseAgent:
-        """
-        Creates an agent instance of the specified type.
+# Register existing agent types
+register_agent_type("OrchestratorAgent", OrchestratorAgent)
+register_agent_type("ContentResearchAgent", ContentResearchAgent)
+register_agent_type("WritingAgent", WritingAgent)
+register_agent_type("SEOAgent", SEOAgent)
+register_agent_type("ImageAgent", ImageAgent)
 
-        Args:
-            agent_type_key (str): The key for the agent type to create (e.g., "orchestrator").
-            agent_id (Optional[str]): Specific agent ID. If None, the agent's default ID will be used.
-            **kwargs: Additional keyword arguments to pass to the agent's constructor (e.g., name, description).
-
-        Returns:
-            BaseAgent: An instance of the requested agent.
-
-        Raises:
-            ValueError: If the agent_type_key is not registered.
-        """
-        agent_class = cls._registry.get(agent_type_key)
-        if not agent_class:
-            logger.error(f"Agent type '{agent_type_key}' not found in factory registry. Available types: {list(cls._registry.keys())}")
-            raise ValueError(f"Agent type '{agent_type_key}' not registered in factory.")
+def create_agent(agent_type_name: str, agent_id: Optional[str] = None, 
+                   name: Optional[str] = None, description: Optional[str] = None,
+                   use_tmp_path: bool = False, tmp_path: Optional[Any] = None, # Added tmp_path and use_tmp_path
+                   **kwargs) -> Optional[BaseAgent]:
+    logger.debug(f"Attempting to create agent of type: {agent_type_name} with ID: {agent_id}")
+    agent_class = AGENT_REGISTRY.get(agent_type_name)
+    if agent_class:
+        params = {}
+        if agent_id: params['agent_id'] = agent_id
+        if name: params['name'] = name
+        if description: params['description'] = description
         
-        # Prepare constructor arguments
-        # Our agents typically take agent_id, name, description. Kwargs can override defaults or add more.
-        constructor_args = {}
-        if agent_id:
-            constructor_args['agent_id'] = agent_id
-        
-        # Merge with other kwargs, allowing user-provided kwargs to override defaults set by agent_id logic
-        constructor_args.update(kwargs) 
-
-        logger.info(f"Creating agent of type '{agent_type_key}' (Class: {agent_class.__name__}) with ID '{agent_id if agent_id else 'default'}' and args: {constructor_args}")
+        if use_tmp_path and tmp_path:
+            params['data_dir_override'] = str(tmp_path) # Pass tmp_path as string for override
+            
+        params.update(kwargs) # Add any other specific kwargs
         try:
-            return agent_class(**constructor_args)
+            instance = agent_class(**params)
+            logger.info(f"Agent of type '{agent_type_name}' created successfully with ID '{agent_id if agent_id else 'default'}'")
+            return instance
         except Exception as e:
-            logger.error(f"Error instantiating agent '{agent_type_key}' with class {agent_class.__name__} and args {constructor_args}: {e}", exc_info=True)
-            raise # Re-raise the exception after logging
+            logger.error(f"Error instantiating agent '{agent_type_name}' with class {agent_class.__name__} and args {params}: {e}", exc_info=True)
+            return None
 
 # Example of how one might dynamically register later, if needed:
 # class CustomAgent(BaseAgent):

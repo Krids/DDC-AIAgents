@@ -69,26 +69,28 @@ async def run_blog_creation_workflow():
         logger.critical(f"An unexpected error occurred during agent creation: {e}", exc_info=True)
         return
     
-    # Equip the research agent with the web search tool
-    if hasattr(default_api_instance, 'web_search'):
-        if hasattr(research_agent, 'set_web_search_tool'):
-            # Check if the tool is async or needs wrapping
-            if asyncio.iscoroutinefunction(default_api_instance.web_search):
-                research_agent.set_web_search_tool(default_api_instance.web_search)
-                logger.info("Async web search tool has been set for ContentResearchAgent.")
-            else:
-                # Wrap synchronous tool to be awaitable
-                async def async_web_search_wrapper(*args, **kwargs):
-                    loop = asyncio.get_event_loop()
-                    logger.debug("Using synchronous web_search_tool wrapped in async executor.")
-                    # Ensure the lambda captures args and kwargs correctly for the executor
-                    return await loop.run_in_executor(None, lambda: default_api_instance.web_search(*args, **kwargs))
-                research_agent.set_web_search_tool(async_web_search_wrapper)
-                logger.info("Synchronous web search tool (wrapped to async) has been set for ContentResearchAgent.")
-        else:
-            logger.warning(f"Research agent (type {type(research_agent)}) does not have 'set_web_search_tool' method.")
-    else:
-        logger.warning("default_api_instance.web_search not available. ContentResearchAgent may use simulated search.")
+    # The ContentResearchAgent now uses Apify internally and does not need a web_search_tool to be set.
+    # The following block for setting web_search_tool is no longer needed for ContentResearchAgent.
+    # # Equip the research agent with the web search tool
+    # if hasattr(default_api_instance, 'web_search'):
+    #     if hasattr(research_agent, 'set_web_search_tool'):
+    #         # Check if the tool is async or needs wrapping
+    #         if asyncio.iscoroutinefunction(default_api_instance.web_search):
+    #             research_agent.set_web_search_tool(default_api_instance.web_search)
+    #             logger.info("Async web search tool has been set for ContentResearchAgent.")
+    #         else:
+    #             # Wrap synchronous tool to be awaitable
+    #             async def async_web_search_wrapper(*args, **kwargs):
+    #                 loop = asyncio.get_event_loop()
+    #                 logger.debug("Using synchronous web_search_tool wrapped in async executor.")
+    #                 # Ensure the lambda captures args and kwargs correctly for the executor
+    #                 return await loop.run_in_executor(None, lambda: default_api_instance.web_search(*args, **kwargs))
+    #             research_agent.set_web_search_tool(async_web_search_wrapper)
+    #             logger.info("Synchronous web search tool (wrapped to async) has been set for ContentResearchAgent.")
+    #     else:
+    #         logger.warning(f"Research agent (type {type(research_agent)}) does not have 'set_web_search_tool' method.")
+    # else:
+    #     logger.warning("default_api_instance.web_search not available. ContentResearchAgent may use simulated search.")
 
     orchestrator.register_agent(research_agent)
     orchestrator.register_agent(writing_agent)
@@ -120,14 +122,13 @@ async def run_blog_creation_workflow():
     
     logger.info(f"Triggering orchestrator to process its master task {orchestrator_workflow_task.task_id}...")
     
-    # The Orchestrator's process_task is designed to pick up "Create a blog post on topic: X"
-    # and then call execute_blog_post_workflow. We assign this task to itself and wait for it.
-    # This uses the orchestrator's own task management and callback system.
-    final_workflow_task_result: Optional[Task] = await orchestrator.assign_task_and_wait(
-        agent=orchestrator, # The orchestrator agent itself
-        task_description=orchestrator_workflow_task.description, # Pass the description of the task it should execute
-        # input_artifacts can be None if process_task extracts topic from description
-    )
+    # Directly call process_task for the orchestrator's own master workflow.
+    # The orchestrator_workflow_task object will be updated in place.
+    await orchestrator.process_task(orchestrator_workflow_task)
+    
+    # After process_task completes, orchestrator_workflow_task should be updated.
+    # We use this updated task object directly.
+    final_workflow_task_result = orchestrator_workflow_task 
     
     if final_workflow_task_result and final_workflow_task_result.status == TaskStatus.COMPLETED and final_workflow_task_result.output_artifacts:
         final_artifact = final_workflow_task_result.output_artifacts[0]

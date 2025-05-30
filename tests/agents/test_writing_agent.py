@@ -1,24 +1,50 @@
 import pytest
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch, call
 from datetime import datetime, timezone
 import logging
+from openai import OpenAIError
+from pathlib import Path # For tmp_path
 
 from agents.writing_agent import WritingAgent
 from agents.base_agent import Task, Artifact, TaskStatus # For creating test tasks/artifacts
-from protocols.a2a_schemas import AgentMessage
-from core.agent_prompt_builder import generate_prompt # To verify prompt construction if needed
+# from protocols.a2a_schemas import AgentMessage # Removed as per previous steps if truly unused
+from core.agent_factory import create_agent # For using the factory
+# from core.agent_prompt_builder import generate_prompt # To verify prompt construction if needed
 
 @pytest.fixture
-async def writing_agent_instance():
+def writing_agent_instance(monkeypatch, tmp_path: Path) -> WritingAgent: # Added tmp_path
     """Provides a WritingAgent instance with a mocked OpenAI client."""
-    with patch('agents.writing_agent.AsyncOpenAI') as MockOpenAIClass:
-        mock_openai_client_instance = AsyncMock()
-        MockOpenAIClass.return_value = mock_openai_client_instance
-        instance = WritingAgent()
-        # instance.openai_client is now correctly set by the __init__ method
-        # due to the patch, to mock_openai_client_instance.
-        yield instance
+    mock_openai_client_instance = AsyncMock() # This is the client instance itself
+    mock_openai_client_instance.chat = AsyncMock() # This is the .chat attribute
+    mock_openai_client_instance.chat.completions = AsyncMock() # This is the .chat.completions attribute
+    # .create will be an AsyncMock by default on .chat.completions if not specified otherwise, which is fine.
+
+    # We patch AsyncOpenAI so when the agent initializes it, it gets our mock_openai_client_instance
+    monkeypatch.setattr("agents.writing_agent.AsyncOpenAI", lambda: mock_openai_client_instance)
+    
+    instance = create_agent(
+        "WritingAgent",
+        use_tmp_path=True,
+        tmp_path=tmp_path
+    )
+    assert instance is not None, "Failed to create WritingAgent via factory"
+    # The instance.openai_client should now be our mock_openai_client_instance due to the patch.
+    return instance
+
+@pytest.fixture
+def writing_agent_no_openai_client(monkeypatch, caplog, tmp_path: Path): # Added tmp_path
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    # Patch AsyncOpenAI to raise an error during initialization
+    with patch('agents.writing_agent.AsyncOpenAI', side_effect=OpenAIError("Init failed test")):
+        with caplog.at_level(logging.ERROR):
+            agent = create_agent(
+                "WritingAgent",
+                use_tmp_path=True,
+                tmp_path=tmp_path
+            )
+    assert agent is not None, "Failed to create WritingAgent via factory (no_openai_client)"
+    return agent
 
 @pytest.mark.asyncio
 async def test_writing_agent_initialization(writing_agent_instance: WritingAgent):
@@ -31,16 +57,19 @@ async def test_writing_agent_initialization(writing_agent_instance: WritingAgent
 
 @pytest.mark.asyncio
 async def test_process_task_success(writing_agent_instance: WritingAgent):
+    agent = writing_agent_instance
+
     # Mock the OpenAI client's chat completion response
+    mock_completion_content = "# Test Blog Post\\nThis is a test draft."
     mock_completion_response = MagicMock()
     mock_completion_response.choices = [MagicMock()]
-    mock_completion_response.choices[0].message.content = "# Test Blog Post\nThis is a test draft."
-    mock_completion_response.usage = MagicMock() # Ensure usage is a MagicMock
-    mock_completion_response.usage.prompt_tokens = 100
-    mock_completion_response.usage.completion_tokens = 50
-    mock_completion_response.usage.total_tokens = 150
-    # The openai_client on the instance IS the AsyncMock, so we configure its methods
-    writing_agent_instance.openai_client.chat.completions.create = AsyncMock(return_value=mock_completion_response)
+    mock_completion_response.choices[0].message = MagicMock(content=mock_completion_content)
+    mock_completion_response.usage = MagicMock(prompt_tokens=10, completion_tokens=20, total_tokens=30)
+    # For saving, ensure the mock response object has model_dump()
+    mock_completion_response.model_dump = MagicMock(return_value={
+        "id": "cmpl-test123", "choices": [{"message": {"content": mock_completion_content}}], "usage": {"total_tokens": 30}
+    })
+    agent.openai_client.chat.completions.create = AsyncMock(return_value=mock_completion_response)
 
     research_data = "Some research findings about topic X."
     research_artifact = Artifact(
@@ -52,32 +81,38 @@ async def test_process_task_success(writing_agent_instance: WritingAgent):
         description="Web research summary for topic: Topic X",
         created_at=datetime.now(timezone.utc).isoformat()
     )
-    task = writing_agent_instance.create_task(
+    task = agent.create_task(
         description="Write a blog post on Topic X",
         initiator_agent_id="orchestrator",
         input_artifacts=[research_artifact]
     )
-    writing_agent_instance.set_message_handler(AsyncMock())
-    await writing_agent_instance.process_task(task)
+    agent.set_message_handler(AsyncMock())
+    await agent.process_task(task)
 
     assert task.status == TaskStatus.COMPLETED
     assert len(task.output_artifacts) == 1
     output_artifact = task.output_artifacts[0]
     assert output_artifact.content_type == "text/markdown"
-    assert "# Test Blog Post" in output_artifact.data
+    assert mock_completion_content in output_artifact.data
+    assert "Blog post draft for topic: Topic X" in output_artifact.description
     assert "(generated by OpenAI, prompt builder)" in output_artifact.description
 
-    writing_agent_instance.openai_client.chat.completions.create.assert_awaited_once()
-    call_args = writing_agent_instance.openai_client.chat.completions.create.call_args
+    agent.openai_client.chat.completions.create.assert_awaited_once()
+    call_args = agent.openai_client.chat.completions.create.call_args
     assert call_args.kwargs['model'] == "gpt-3.5-turbo"
     messages = call_args.kwargs['messages']
-    assert messages[0]["role"] == "system"
-    assert messages[1]["role"] == "user"
-    assert "topic x" in messages[1]["content"].lower()
-    assert research_data in messages[1]["content"]
+    assert len(messages) == 1
+    assert messages[0]["role"] == "user"
+    
+    # Check for key elements in the prompt generated by build_llm_prompt and enriched
+    # The exact string "Write a blog post about: Topic X" might be part of a larger instruction set.
+    final_prompt_content = messages[0]["content"]
+    assert "Write a blog post about: Topic X".lower() in final_prompt_content.lower()
+    assert research_data in final_prompt_content # Ensure research findings are in the prompt
+    assert "Key instructions to follow:".lower() in final_prompt_content.lower()
 
-    writing_agent_instance.message_handler.assert_awaited_once()
-    sent_message = writing_agent_instance.message_handler.call_args[0][0]
+    agent.message_handler.assert_awaited_once()
+    sent_message = agent.message_handler.call_args[0][0]
     assert sent_message.message_type == "task_status_update"
     assert sent_message.payload["task_id"] == task.task_id
 
@@ -97,96 +132,149 @@ async def test_process_task_no_input_artifacts(writing_agent_instance: WritingAg
 
 @pytest.mark.asyncio
 async def test_process_task_openai_api_error(writing_agent_instance: WritingAgent, caplog):
+    agent = writing_agent_instance
     caplog.set_level(logging.ERROR)
-    writing_agent_instance.openai_client.chat.completions.create = AsyncMock(side_effect=Exception("OpenAI API Error"))
+    agent.openai_client.chat.completions.create = AsyncMock(side_effect=OpenAIError("OpenAI API Error Simulation"))
 
     research_artifact = Artifact(
-        artifact_id="res1", task_id="t1", creator_agent_id="r",
-        content_type="text/plain", data="Research data",
+        artifact_id="res1_err", task_id="t1_err", creator_agent_id="r_err",
+        content_type="text/plain", data="Research data for error case",
         description="topic: Test Topic API Error",
         created_at=datetime.now(timezone.utc).isoformat()
     )
-    task = writing_agent_instance.create_task(
-        description="Blog about API error",
-        initiator_agent_id="orch",
-        input_artifacts=[research_artifact]
-    )
-    writing_agent_instance.set_message_handler(AsyncMock())
-    await writing_agent_instance.process_task(task)
-
-    assert task.status == TaskStatus.COMPLETED
-    assert "Error calling OpenAI API for topic 'Test Topic API Error'" in caplog.text
-    assert "OpenAI API Error" in caplog.text
-    assert len(task.output_artifacts) == 1
-    assert "Error-Fallback Blog Post" in task.output_artifacts[0].data
-    writing_agent_instance.message_handler.assert_awaited_once()
-
-@pytest.mark.asyncio
-async def test_process_task_openai_client_not_initialized(caplog):
-    with patch('agents.writing_agent.AsyncOpenAI', side_effect=Exception("Init failed")):
-        with caplog.at_level(logging.ERROR):
-            agent = WritingAgent()
-    
-    assert agent.openai_client is None
-    assert "Error initializing OpenAI client" in caplog.text
-    assert "Init failed" in caplog.text
-
-    caplog.clear()
-    caplog.set_level(logging.WARNING)
-
-    research_artifact = Artifact(
-        artifact_id="res2", task_id="t2", creator_agent_id="r",
-        content_type="text/plain", data="Research data",
-        description="topic: Client None Test",
-        created_at=datetime.now(timezone.utc).isoformat()
-    )
     task = agent.create_task(
-        description="Blog with no client",
-        initiator_agent_id="orch",
+        description="Blog about API error",
+        initiator_agent_id="orch_err",
         input_artifacts=[research_artifact]
     )
     agent.set_message_handler(AsyncMock())
     await agent.process_task(task)
 
-    assert task.status == TaskStatus.COMPLETED 
+    assert task.status == TaskStatus.FAILED
+    assert "OpenAI API error while generating draft for 'Test Topic API Error'" in caplog.text
+    assert "OpenAI API Error Simulation" in caplog.text
+    assert len(task.output_artifacts) == 0
+
+@pytest.mark.asyncio
+async def test_process_task_openai_client_not_initialized(writing_agent_no_openai_client: WritingAgent, caplog):
+    agent = writing_agent_no_openai_client
+    caplog.set_level(logging.WARNING)
+
+    research_artifact = Artifact(
+        artifact_id="res2_noclient", task_id="t2_noclient", creator_agent_id="r_noclient",
+        content_type="text/plain", data="Research data with no client",
+        description="topic: Client None Test",
+        created_at=datetime.now(timezone.utc).isoformat()
+    )
+    task = agent.create_task(
+        description="Blog with no client",
+        initiator_agent_id="orch_noclient",
+        input_artifacts=[research_artifact]
+    )
+    agent.set_message_handler(AsyncMock())
+    await agent.process_task(task)
+
+    assert task.status == TaskStatus.COMPLETED
     assert len(task.output_artifacts) == 1
-    assert "Simulated Blog Post" in task.output_artifacts[0].data
-    assert "OpenAI client not available. Using SIMULATED draft generation" in caplog.text
-    agent.message_handler.assert_awaited_once()
+    output_data = task.output_artifacts[0].data
+    expected_placeholder = "Placeholder draft for Client None Test - OpenAI client not initialized."
+    assert expected_placeholder in output_data
+    assert "OpenAI client not available. Cannot generate draft for 'Client None Test'" in caplog.text
 
 @pytest.mark.asyncio
 async def test_writing_agent_topic_extraction_from_description(writing_agent_instance: WritingAgent):
-    writing_agent_instance.generate_blog_draft_with_openai = AsyncMock(return_value="Mocked Draft")
+    agent = writing_agent_instance
+    agent._generate_draft_with_openai = AsyncMock(return_value="Mocked Draft Content")
     
     test_cases = [
         ("Web research summary for topic: My Awesome Topic", "My Awesome Topic"),
         ("Research summary for topic: Another Topic (detailed)", "Another Topic"),
-        ("Some other description without the keyword", "the provided research"),
+        ("Some other description without the keyword topic:", "the provided research"),
         ("topic: Only Topic Here", "Only Topic Here"),
         ("No topic keyword in this string", "the provided research")
     ]
 
     for desc, expected_topic in test_cases:
         research_artifact = Artifact(
-            artifact_id="res_topic_test", task_id="t_topic", creator_agent_id="r",
-            content_type="text/plain", data="Data", description=desc,
+            artifact_id=f"res_topic_test_{expected_topic.replace(' ', '_')}", task_id="t_topic_ext", 
+            creator_agent_id="r_topic_ext",
+            content_type="text/plain", data="Some research data.", description=desc,
             created_at=datetime.now(timezone.utc).isoformat()
         )
-        task = writing_agent_instance.create_task(
-            description="Blog on whatever",
-            initiator_agent_id="orch",
+        task = agent.create_task(
+            description="Blog on whatever topic",
+            initiator_agent_id="orch_topic_ext",
             input_artifacts=[research_artifact]
         )
-        # Reset message_handler mock for each iteration if it's checked per call
-        # For generate_blog_draft_with_openai, we are checking its calls at the end.
-        writing_agent_instance.message_handler = AsyncMock() # Reset for this specific call to process_task
+        agent.set_message_handler(AsyncMock())
         
-        await writing_agent_instance.process_task(task)
+        await agent.process_task(task)
         
-        writing_agent_instance.generate_blog_draft_with_openai.assert_any_call(
-            "Data",
-            expected_topic
+        agent._generate_draft_with_openai.assert_any_call(
+            expected_topic, 
+            "Some research data.", 
+            task_id_for_log=task.task_id
         )
-        writing_agent_instance.message_handler.assert_awaited_once() # Check message sent for this task
 
-    assert writing_agent_instance.generate_blog_draft_with_openai.call_count == len(test_cases) 
+    assert agent._generate_draft_with_openai.call_count == len(test_cases)
+
+@pytest.mark.asyncio
+async def test_process_task_no_input_artifact(writing_agent_instance: WritingAgent, caplog):
+    agent = writing_agent_instance
+    caplog.set_level(logging.ERROR)
+    agent.set_message_handler(AsyncMock())
+    task = agent.create_task(
+        description="Write blog with no research",
+        initiator_agent_id="orchestrator"
+    )
+    await agent.process_task(task)
+    assert task.status == TaskStatus.FAILED
+    assert f"Writing task {task.task_id} for {agent.card.name} has no input research artifact" in caplog.text
+    agent.message_handler.assert_awaited_once()
+
+@pytest.mark.asyncio
+async def test_json_saving_of_mocked_openai_response(writing_agent_instance: WritingAgent, tmp_path):
+    agent = writing_agent_instance
+    agent.openai_client.chat.completions.create = AsyncMock()
+
+    mock_content = "Successful generation!"
+    mock_response_dict = {
+        "id": "chatcmpl-mocksuccess",
+        "object": "chat.completion",
+        "created": int(datetime.now(timezone.utc).timestamp()),
+        "model": "gpt-3.5-turbo-0125",
+        "choices": [{
+            "index": 0,
+            "message": {"role": "assistant", "content": mock_content},
+            "logprobs": None,
+            "finish_reason": "stop"
+        }],
+        "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+        "system_fingerprint": None
+    }
+    
+    mock_openai_completion = MagicMock()
+    mock_openai_completion.choices = [MagicMock(message=MagicMock(content=mock_content))]
+    mock_openai_completion.model_dump = MagicMock(return_value=mock_response_dict)
+    
+    agent.openai_client.chat.completions.create.return_value = mock_openai_completion
+
+    with patch("agents.writing_agent.os.makedirs"), \
+         patch("agents.writing_agent.os.path.join", return_value=str(tmp_path / "test_openai_writing.json")):
+        
+        generated_text = await agent._generate_draft_with_openai("Test Save Topic", "Research for save test", "task_save_test_123")
+        assert generated_text == mock_content
+
+@pytest.mark.asyncio
+async def test_generate_draft_openai_response_no_content(writing_agent_instance: WritingAgent, caplog):
+    agent = writing_agent_instance
+    caplog.set_level(logging.ERROR)
+
+    mock_completion_no_content = MagicMock()
+    mock_completion_no_content.choices = [MagicMock(message=MagicMock(content=None))]
+    mock_completion_no_content.model_dump = MagicMock(return_value={"id": "nocontent", "choices": [{"message": {"content": None}}]})
+    agent.openai_client.chat.completions.create = AsyncMock(return_value=mock_completion_no_content)
+
+    generated_text = await agent._generate_draft_with_openai("No Content Topic", "Research", "task_no_content")
+    assert generated_text is None
+    assert "OpenAI response for 'No Content Topic' did not contain expected content" in caplog.text 
